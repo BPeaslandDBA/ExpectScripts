@@ -1,0 +1,106 @@
+#!/usr/local/bin/expect
+#
+# change_db_pass.xp
+# by Brian Peasland
+# 19 April 2001
+#
+# This script uses EXPECT to connect to various
+# databases and modify the password for the user given
+#
+# This script assumes you have your Oracle environment
+# setup correctly to run SQL*Plus. It doesn't matter
+# which version of SQL*Plus you run. So set your environment
+# variables before running this program.
+#
+# 31 May 2001
+# Modified script to handle invalid userid/password combination - BSP
+
+#
+# Introductory Information
+# 
+
+puts "\n"
+puts "Change database passwords"
+puts "\n"
+puts "This script will sign on to every database and"
+puts "change the password for the given username."
+puts "You will have to enter the new password twice."
+puts "\n"
+
+#
+# Ask user for username and passwords (old and new)
+#
+
+send_user "Enter username: "
+expect_user -re (.*)\n { set username $expect_out(1,string) }
+send_user "Enter old password: "
+stty -echo
+expect_user -re (.*)\n { set old_password $expect_out(1,string) }
+stty echo
+send_user "\nEnter new password: "
+stty -echo
+expect_user -re (.*)\n { set new_password1 $expect_out(1,string) }
+stty echo
+send_user "\nEnter new password: "
+stty -echo
+expect_user -re (.*)\n { set new_password2 $expect_out(1,string) }
+stty echo
+
+#
+# Verify new password entered correctly
+#
+
+if { $new_password1 != $new_password2 } {
+   puts "\n";
+   puts "The new passwords did not match!"
+   puts "Script abort!"
+   exit 2
+   }  ;# if
+
+#
+# Set up list of remote databases
+#
+# Modify this list for *all* databases
+#
+set remotedb { gasr gasp gasq gasm frccd frccp heat heattest 
+      	       invds invms aliasdev aliasst aliasut netm ps12 
+	       inv redods redoms redotest rs14 seamd seamm seamp 
+               dorran snd17 snm17 snp17 snu14 tma sard } 
+
+#
+# Step through list of databases and change password
+#
+for {set i [expr [llength $remotedb]-1]} {$i>=0} {incr i -1} {
+
+   # Get remote database from list
+   set remote_db [lindex $remotedb $i]
+
+   # Invoke SQL*Plus
+   puts " "
+   puts " "
+   spawn sqlplus $username@$remote_db
+   expect "password:"
+   send "$old_password\r"
+
+   # Check if signon was correct.
+   # If correct, change password then exit sqlplus
+   # If incorrect (ORA-01017), issue CTL-C to break out
+   #    also issue an error message
+   # If other errors, issue CTL-C to break out
+   #    and issue the error message returned
+
+   expect {
+      "SQL>" { send "ALTER USER $username IDENTIFIED BY $new_password1;\r"
+               expect "SQL>" 
+               send "exit\r" }
+      "ORA-01017" { send -break 
+                    puts "Invalid password for $remote_db"
+                    puts " "}
+      -re "ORA-(.*):" { send -break 
+                    puts "Error for $remote_db: $expect_out(0,string)" 
+                    puts " "}
+
+      } ;# expect
+
+   }    ;# for
+
