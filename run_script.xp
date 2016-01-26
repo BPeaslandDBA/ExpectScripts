@@ -1,0 +1,92 @@
+#!/usr/local/bin/expect
+#
+# run_script.xp
+# by Brian Peasland
+# 11 July 2001
+#
+# This script uses EXPECT to connect to multiple
+# databases and run a supplied script. This makes
+# life easier by letting one run a script without 
+# having to sign on to the multiple databases over 
+# and over again.
+#
+# This script assumes you have your Oracle environment
+# setup correctly to run SQL*Plus. It shouldn't matter
+# which version of SQL*Plus you run.
+
+puts "\n"
+puts "run_script.xp"
+puts "by Brian Peasland"
+puts "11 July 2001"
+puts "\n"
+puts "This script runs SQL*Plus scripts against multiple db's"
+puts "\n"
+
+#
+# Get information from user
+#
+
+# Get username
+send_user "Enter username: "
+expect_user -re (.*)\n { set username $expect_out(1,string) }
+# Get password
+send_user "Enter password: "
+stty -echo
+expect_user -re (.*)\n { set password $expect_out(1,string) }
+stty echo
+puts "\n"
+# Get script name
+send_user "Enter script name: "
+expect_user -re (.*)\n { set scriptname $expect_out(1,string) }
+puts "\n"
+# Get list of databases
+puts "Enter list of database names."
+puts "Terminate list with 'zzz'"
+puts "\n"
+# While not 'zzz', add entry to list of remote databases
+set dbname ""
+set remotedb {}
+while { $dbname != "zzz" } {
+  send_user "Enter Database (or 'zzz' to quit): "
+  expect_user -re (.*)\n { set dbname $expect_out(1,string) }
+  if {$dbname != "zzz" } {
+     lappend remotedb $dbname
+     } ;# if
+  } ;# while 
+
+#
+# Step through list of remote databases
+#
+
+for {set i [expr [llength $remotedb]-1]} {$i>=0} {incr i -1} {
+
+   # Get remote database from list
+   set remote_db [lindex $remotedb $i]
+
+   # Invoke SQL*Plus
+   spawn sqlplus $username@$remote_db
+   # must sleep at this point or Expect misses the password prompt
+   sleep 1
+   expect "password:"
+   send "$password\r"
+
+
+   # Run script 
+   expect {
+      "SQL>" { send "@$scriptname\r" 
+               expect "SQL>" 
+               send "exit;\r" 
+               } 
+      "ORA-01017" { send -break
+                    puts "Incorrect userid/password for $remote_db"
+                    puts " " }
+      -re "ORA-(.*):" { send -break 
+                        puts "Error for $remote_db: $expect_out(0,string)" 
+                        puts " "}
+          } ;# expect
+
+   }    ;# for
+
+puts "\n"
+puts "END OF run_script.xp EXECUTION!"
+puts "\n"
